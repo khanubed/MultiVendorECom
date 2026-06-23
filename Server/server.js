@@ -22,7 +22,7 @@ const server = http.createServer(app);
 // 1. MIDDLEWARES & CORS CONFIGURATION
 // ==========================================
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: process.env.CLIENT_URL ,
     credentials: true
 }));
 
