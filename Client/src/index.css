@@ -1,0 +1,97 @@
+/* 1. In v4, a single import replaces the old base/components/utilities directives */
+@import "tailwindcss";
+
+@theme {
+  /* Register your exact custom layout spacing tokens */
+  /* --spacing-xl: 80px;
+  --spacing-lg: 48px;
+  --spacing-md: 24px;
+  --spacing-sm: 16px;
+  --spacing-xs: 8px;
+  --spacing-base: 4px;
+  --spacing-margin-desktop: 40px;
+  --spacing-margin-mobile: 16px;
+  --spacing-gutter: 24px; */
+
+  /* Custom animation keyframes */
+  --animate-custom-pulse: custom-pulse 2s infinite;
+
+  @keyframes custom-pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+}
+
+body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+@utility glass-header {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@theme {
+  /* 2. Custom keyframes defined here automatically create the `animate-custom-pulse` utility */
+  --animate-custom-pulse: custom-pulse 2s infinite;
+
+  @keyframes custom-pulse {
+    0% { 
+      transform: scale(0.95); 
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); 
+    }
+    70% { 
+      transform: scale(1); 
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); 
+    }
+    100% { 
+      transform: scale(0.95); 
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); 
+    }
+  }
+}
+
+/* 3. Global base styles are written as standard, vanilla CSS selectors */
+body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+/* 4. Custom component classes now use the official `@utility` directive. 
+      This registers them safely with Tailwind's variant engine (e.g., hover:glass-header). */
+@utility glass-header {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@utility bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 48px;
+}
+
+@utility premium-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Native CSS nesting is supported out-of-the-box */
+  &:hover {
+    box-shadow: 0px 4px 20px rgba(15, 23, 42, 0.05);
+    transform: translateY(-2px);
+  }
+}
+
+@utility pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  background-color: #10B981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: var(--animate-custom-pulse);
+}
