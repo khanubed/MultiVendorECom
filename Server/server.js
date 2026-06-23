@@ -226,3 +226,5 @@ server.listen(PORT, () => {
     console.log(`💬 WebSocket server layer attached and listening.`);
     console.log(`🌐 CORS enabled for: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
 });
+
+export default server;
