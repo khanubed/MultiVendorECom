@@ -145,7 +145,10 @@ export const cartAPI = {
   removeFromCart: (productId) => apiClient.delete(`/cart/remove/${productId}`),
 
   // Clear cart
-  clearCart: () => apiClient.delete('/cart/clear')
+  clearCart: () => apiClient.delete('/cart/clear'),
+
+  //Quantity update 
+  updateQuantity: (productId, quantity) => apiClient.put('/cart/quantity', { productId : productId , quantity : quantity })
 };
 
 // ==========================================

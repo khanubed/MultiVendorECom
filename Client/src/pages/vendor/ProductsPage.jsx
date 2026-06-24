@@ -23,7 +23,8 @@ const ProductsPage = () => {
       setError(null);
       try {
         const res = await productAPI.getVendorProducts();
-        const data = res?.data?.data ?? res?.data ?? [];
+        console.log(res)
+        const data = res.data.products ?? res?.data ?? [];
         setProducts(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('Failed to load vendor products', err);
@@ -132,7 +133,7 @@ const ProductsPage = () => {
                       {p.stock} Units In Stock
                     </span>
                   </td>
-                  <td className="p-4 text-right space-x-1 whitespace-nowrap">
+                  <td className="p-4 text-center justify-end flex  space-x-1 whitespace-nowrap">
                     <Link to= {`/vendor/products/edit/${id}`}  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 cursor-pointer"><Edit3 className="w-3.5 h-3.5"/></Link>
                     <button onClick={() => handleDelete(id)} className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5"/></button>
                   </td>

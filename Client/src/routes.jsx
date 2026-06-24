@@ -38,7 +38,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "shop",
-        element: <ProtectedRoute element={<ShopPage />} requiredRoles={['customer']} />,
+        element: <ProtectedRoute element={<ShopPage />} requiredRoles={['customer', 'vendor']} />,
       },
       {
         path: "cart",
