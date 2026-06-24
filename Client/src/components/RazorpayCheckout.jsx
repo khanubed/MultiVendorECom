@@ -47,7 +47,6 @@ const RazorpayCheckout = ({
     setLoading(true);
 
     try {
-      // 1. Load Razorpay Gateway SDK on-demand
       const isScriptLoaded = await loadRazorpayScript();
       if (!isScriptLoaded) {
         throw new Error(
@@ -55,7 +54,7 @@ const RazorpayCheckout = ({
         );
       }
 
-      // 2. Create Razorpay order from backend
+      // 1. Create Razorpay order from backend
       const { data } = await orderAPI.createRazorpayCheckout({
         items: cartItems.map((item) => ({
           productId: item._id || item.id,
@@ -68,9 +67,22 @@ const RazorpayCheckout = ({
         throw new Error("Failed to create checkout order");
       }
 
-      setOrderId(data.order._id);
+      // 🛡️ CRITICAL FIX 1: Safely extract the ID checking both '_id' and 'id'
+      const backendOrderId = data.order._id || data.order.id;
 
-      // 3. Initialize Razorpay checkout options object
+      // Guard rail: Stop immediately if the backend failed to return an ID
+      if (!backendOrderId) {
+        console.error(
+          "❌ Full backend order object for debugging:",
+          data.order,
+        );
+        throw new Error("Order ID was not generated correctly by the server.");
+      }
+
+      // Keep your state setter for other components if needed
+      setOrderId(backendOrderId);
+
+      // 2. Initialize Razorpay options
       const options = {
         key: data.keyId,
         amount: data.razorpayOrder.amount,
@@ -78,29 +90,21 @@ const RazorpayCheckout = ({
         name: "MultiVendor Store",
         description: `Order for ${cartItems.length} item(s)`,
         order_id: data.razorpayOrder.id,
-        // Inside your RazorpayCheckout component options logic block:
+
         handler: async (response) => {
           try {
-            // 🔍 TRACK FRONTEND OBJECT CONSTRUCTION
-            console.log("🎯 Razorpay UI Callback Received:", response);
-            console.log("🆔 Internal Database Order ID:", data?.order?._id);
-
-            const payload = {
+            // 🛡️ CRITICAL FIX 2: Use the clean 'backendOrderId' variable directly
+            // to bypass any asynchronous state closure issues.
+            const verifyResponse = await orderAPI.verifyRazorpayPayment({
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature,
-              orderId: data?.order?._id,
-            };
-
-            console.log("🚀 Shipping Payload to Verification Route:", payload);
-
-            const verifyResponse =
-              await orderAPI.verifyRazorpayPayment(payload);
+              orderId: backendOrderId,
+            });
 
             toast.success("Payment successful! Order placed.");
             onSuccess(verifyResponse.data.order);
           } catch (err) {
-            console.error("❌ Verification Request Crashed:", err);
             toast.error(
               err.response?.data?.message || "Payment verification failed",
             );
@@ -123,7 +127,6 @@ const RazorpayCheckout = ({
         },
       };
 
-      // 4. Instantiation is fully secured now that the script is checked
       const rzp = new window.Razorpay(options);
       rzp.open();
     } catch (error) {
