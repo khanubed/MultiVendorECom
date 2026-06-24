@@ -78,9 +78,9 @@ const RazorpayCheckout = ({
         name: "MultiVendor Store",
         description: `Order for ${cartItems.length} item(s)`,
         order_id: data.razorpayOrder.id,
+        // Inside your RazorpayCheckout component options logic block:
         handler: async (response) => {
           try {
-            // Verify payment signature on backend
             const verifyResponse = await orderAPI.verifyRazorpayPayment({
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
@@ -89,6 +89,8 @@ const RazorpayCheckout = ({
             });
 
             toast.success("Payment successful! Order placed.");
+
+            // Pass the fully updated order downstream to clear any local application states
             onSuccess(verifyResponse.data.order);
           } catch (err) {
             toast.error(
