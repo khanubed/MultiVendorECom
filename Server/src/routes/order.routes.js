@@ -249,11 +249,6 @@ router.post("/webhook/razorpay", async (req, res) => {
         .json({ success: false, message: "Missing Razorpay signature" });
     }
 
-    console.log("Received Razorpay webhook:", {
-      event: req.body.event,
-      payload: req.body.payload,
-    });
-
     if (!req.rawBody) {
       return res.status(500).json({
         success: false,
@@ -273,12 +268,11 @@ router.post("/webhook/razorpay", async (req, res) => {
     }
 
     const event = req.body;
-
-    // Look into standard webhook wrapper structures
     const paymentEntity = event.payload?.payment?.entity;
     const razorpayOrderId = paymentEntity?.order_id;
     const paymentId = paymentEntity?.id;
 
+    // If it's a general webhook event not tied to a checkout flow, exit cleanly
     if (!razorpayOrderId) {
       return res.status(200).json({
         success: true,
@@ -287,9 +281,11 @@ router.post("/webhook/razorpay", async (req, res) => {
       });
     }
 
+    // Locate the target order via your nested schema path
     const order = await Order.findOne({
       "paymentInfo.razorpayOrderId": razorpayOrderId,
     });
+
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -297,21 +293,34 @@ router.post("/webhook/razorpay", async (req, res) => {
       });
     }
 
+    // 🛡️ Frontend Double-Check: If the frontend verification route already set
+    // this order to "paid" or "processing", acknowledge and shut down cleanly with a 200.
+    if (
+      order.paymentInfo.status === "paid" ||
+      order.orderStatus === "processing"
+    ) {
+      return res.status(200).json({
+        success: true,
+        message:
+          "Webhook received, but order was already fulfilled via frontend verification.",
+      });
+    }
+
+    // 3. Handle specific lifecycle status payloads safely
     if (event.event === "payment.captured") {
       await fulfillOrder(order, paymentId);
     } else if (event.event === "payment.failed") {
-      if (order.paymentInfo.status !== "paid") {
-        order.paymentInfo.status = "failed";
-        order.orderStatus = "cancelled";
-        await order.save();
-      }
+      order.paymentInfo.status = "failed";
+      order.orderStatus = "cancelled";
+      await order.save();
     }
 
-    res
+    return res
       .status(200)
       .json({ success: true, message: "Webhook processed successfully" });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Webhook Controller Crash:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
