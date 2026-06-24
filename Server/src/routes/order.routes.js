@@ -46,28 +46,38 @@ const verifyRazorpaySignature = (payload, secret, expectedSignature) => {
 /**
  * Reusable helper to process successful payments safely (Idempotent)
  */
+/**
+ * Reusable helper to process successful payments safely (Idempotent)
+ */
 const fulfillOrder = async (order, paymentId) => {
-  if (order.paymentInfo.status === "paid") return order; // Already processed, skip
-
-  // 1. Deduct Inventory Stock
-  for (const item of order.items) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: -item.quantity },
-    });
+  // 🛡️ Guardrail: Skip if the frontend or an earlier webhook already finalized this order
+  if (
+    order.paymentInfo.status === "paid" ||
+    order.orderStatus === "processing"
+  ) {
+    console.log(
+      `⚠️ Order ${order._id} already processed. Skipping duplicate execution.`,
+    );
+    return order;
   }
 
-  // 2. Clear customer's cart
-  await User.findByIdAndUpdate(order.user, { cart: [] });
+  // 1. Deduct Inventory Stock Safely
+  if (order.items && order.items.length > 0) {
+    for (const item of order.items) {
+      await Product.findByIdAndUpdate(item.product, {
+        $inc: { stock: -item.quantity },
+      });
+    }
+  }
 
-  // 3. Update Order Status
+  // 2. 🟢 CRITICAL FIX: Update the internal database states explicitly
   order.paymentInfo.status = "paid";
-  order.paymentInfo.transactionId = paymentId;
-  order.paymentInfo.razorpayPaymentId = paymentId;
-  order.paymentInfo.amountPaid = order.totalPrice;
-  order.orderStatus = "processing";
+  order.paymentInfo.paymentId = paymentId;
+  order.orderStatus = "processing"; // Represents that payment is clear, now processing delivery
 
-  await order.save();
-  return order;
+  // 3. 💾 Save the updated document state to MongoDB
+  const savedOrder = await order.save();
+  return savedOrder;
 };
 
 // ==========================================
