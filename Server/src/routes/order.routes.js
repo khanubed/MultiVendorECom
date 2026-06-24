@@ -76,7 +76,9 @@ const fulfillOrder = async (order, paymentId) => {
   order.markModified("paymentInfo");
   order.orderStatus = "processing"; // Represents that payment is clear, now processing delivery
 
-  console.log(`✅ Order ${order._id} marked as paid and processing. Payment ID: ${paymentId}`);
+  console.log(
+    `✅ Order ${order._id} marked as paid and processing. Payment ID: ${paymentId}`,
+  );
 
   // 3. 💾 Save the updated document state to MongoDB
   const savedOrder = await order.save();
@@ -300,34 +302,63 @@ router.post("/webhook/razorpay", async (req, res) => {
       "paymentInfo.razorpayOrderId": razorpayOrderId,
     });
 
+    // 🛠️ FIX: Return 200 even if not found to prevent Razorpay from spamming retries
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order reference matching Razorpay data not found",
-      });
-    }
-
-    // 🛡️ Frontend Double-Check: If the frontend verification route already set
-    // this order to "paid" or "processing", acknowledge and shut down cleanly with a 200.
-    if (
-      order.paymentInfo.status === "paid" ||
-      order.orderStatus === "processing"
-    ) {
+      console.log(
+        `ℹ️ Webhook received for unknown Order ID: ${razorpayOrderId}. Dropping cleanly.`,
+      );
       return res.status(200).json({
         success: true,
         message:
-          "Webhook received, but order was already fulfilled via frontend verification.",
+          "Order reference matching Razorpay data not found in local DB. No retry needed.",
       });
     }
 
-    // 3. Handle specific lifecycle status payloads safely
+    // 1. Handle Payment Captures
     if (event.event === "payment.captured") {
+      // Frontend Double-Check Guardrail
+      if (
+        order.paymentInfo.status === "paid" ||
+        order.orderStatus === "processing"
+      ) {
+        return res.status(200).json({
+          success: true,
+          message:
+            "Webhook received, but order was already fulfilled via frontend verification.",
+        });
+      }
       await fulfillOrder(order, paymentId);
-    } else if (event.event === "payment.failed") {
+    }
+
+    // 2. Handle Payment Failures
+    else if (event.event === "payment.failed") {
       order.paymentInfo.status = "failed";
       order.markModified("paymentInfo");
       order.orderStatus = "cancelled";
       await order.save();
+    }
+
+    // 🚀 BONUS: Handle Refunds processed directly through the Razorpay Dashboard UI
+    else if (event.event === "refund.processed") {
+      if (order.paymentInfo.status !== "refunded") {
+        const refundEntity = event.payload?.refund?.entity;
+
+        order.refundInfo = {
+          id: refundEntity?.id || "rfnd_via_dashboard",
+          amount: (refundEntity?.amount || 0) / 100, // Convert paise back to rupees
+          reason:
+            refundEntity?.notes?.reason || "Refunded via Razorpay Dashboard",
+          refundedAt: new Date(),
+          refundStatus: "processed",
+        };
+        order.orderStatus = "cancelled";
+        order.paymentInfo.status = "refunded";
+        order.markModified("paymentInfo");
+        await order.save();
+        console.log(
+          `💰 Webhook: Order ${order._id} successfully marked as refunded.`,
+        );
+      }
     }
 
     return res
@@ -345,7 +376,7 @@ router.post("/webhook/razorpay", async (req, res) => {
 router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
   try {
     const { reason } = req.body;
-    
+
     // 1. Fetch order from the database
     const order = await Order.findById(req.params.id).populate("items.product");
 
@@ -357,29 +388,39 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
 
     // 2. Authorization Check
     if (order.user.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Unauthorized access to this order." });
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized access to this order.",
+        });
     }
 
-    const paymentId = order.paymentInfo?.razorpayPaymentId || order.paymentInfo?.paymentId; 
+    const paymentId =
+      order.paymentInfo?.razorpayPaymentId || order.paymentInfo?.paymentId;
     if (!paymentId) {
       return res.status(400).json({
         success: false,
-        message: "Cannot refund an order that does not have a confirmed Payment ID.",
+        message:
+          "Cannot refund an order that does not have a confirmed Payment ID.",
       });
     }
 
     // 3. Status Guardrails
-    if (order.orderStatus === "cancelled" || order.paymentInfo.status === "refunded") {
-      return res.status(400).json({ 
-        success: false, 
-        message: "This order has already been cancelled and refunded." 
+    if (
+      order.orderStatus === "cancelled" ||
+      order.paymentInfo.status === "refunded"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "This order has already been cancelled and refunded.",
       });
     }
 
     if (order.paymentInfo.status !== "paid") {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Refund rejected. Current payment status is '${order.paymentInfo.status}', but must be 'paid'.` 
+      return res.status(400).json({
+        success: false,
+        message: `Refund rejected. Current payment status is '${order.paymentInfo.status}', but must be 'paid'.`,
       });
     }
 
@@ -400,16 +441,24 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
           orderId: order._id.toString(),
         },
       });
-      console.log(`✅ Razorpay refund successful for Order ${order._id}. Refund ID: ${razorpayRefund.id}`);
+      console.log(
+        `✅ Razorpay refund successful for Order ${order._id}. Refund ID: ${razorpayRefund.id}`,
+      );
     } catch (razorpayError) {
       // If Razorpay says NO, we log it and exit immediately. DB state remains completely untouched.
-      console.error("❌ Razorpay Gateway API Rejected Refund Request:", razorpayError);
-      
+      console.error(
+        "❌ Razorpay Gateway API Rejected Refund Request:",
+        razorpayError,
+      );
+
       return res.status(402).json({
         success: false,
         message: "The payment gateway rejected this refund request.",
-        errorReason: razorpayError.description || razorpayError.message || "Unknown gateway error",
-        code: razorpayError.code || "GATEWAY_ERROR"
+        errorReason:
+          razorpayError.description ||
+          razorpayError.message ||
+          "Unknown gateway error",
+        code: razorpayError.code || "GATEWAY_ERROR",
       });
     }
 
@@ -426,22 +475,30 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
 
     order.orderStatus = "cancelled";
     order.paymentInfo.status = "refunded";
-    
+
     // Explicitly flag deep mixed updates inside nested schema objects
-    order.markModified("paymentInfo"); 
+    order.markModified("paymentInfo");
     await order.save();
 
     // 7. Success Broadcast Response
     return res.status(200).json({
       success: true,
-      message: "Refund processed successfully via Razorpay. 5% admin commission retained.",
+      message:
+        "Refund processed successfully via Razorpay. 5% admin commission retained.",
       refund: order.refundInfo,
     });
-
   } catch (error) {
     // Catches absolute system/network crashes or database write dropouts
-    console.error("💥 Critical System Failure in Refund Router:", error.message);
-    return res.status(500).json({ success: false, message: "Internal Server Error during processing." });
+    console.error(
+      "💥 Critical System Failure in Refund Router:",
+      error.message,
+    );
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Internal Server Error during processing.",
+      });
   }
 });
 
