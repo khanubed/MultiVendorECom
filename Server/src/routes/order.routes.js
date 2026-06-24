@@ -72,8 +72,11 @@ const fulfillOrder = async (order, paymentId) => {
 
   // 2. 🟢 CRITICAL FIX: Update the internal database states explicitly
   order.paymentInfo.status = "paid";
-  order.paymentInfo.paymentId = paymentId;
+  order.paymentInfo.razorpayPaymentId = paymentId;
+  order.markModified("paymentInfo");
   order.orderStatus = "processing"; // Represents that payment is clear, now processing delivery
+
+  console.log(`✅ Order ${order._id} marked as paid and processing. Payment ID: ${paymentId}`);
 
   // 3. 💾 Save the updated document state to MongoDB
   const savedOrder = await order.save();
@@ -151,6 +154,7 @@ router.post("/checkout", verifyToken, isCustomer, async (req, res) => {
         method: "razorpay",
         status: "pending",
         razorpayOrderId: razorpayOrder.id,
+        razorpayPaymentId: null,
         amountPaid: 0,
       },
       platformCommission: commission,
@@ -321,6 +325,7 @@ router.post("/webhook/razorpay", async (req, res) => {
       await fulfillOrder(order, paymentId);
     } else if (event.event === "payment.failed") {
       order.paymentInfo.status = "failed";
+      order.markModified("paymentInfo");
       order.orderStatus = "cancelled";
       await order.save();
     }
@@ -356,7 +361,7 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
     }
 
     // Ensure the order has a valid payment ID to refund against
-    const paymentId = order.paymentInfo?.paymentId;
+    const paymentId = order.paymentInfo?.razorpayPaymentId;
     if (!paymentId) {
       return res.status(400).json({
         success: false,
@@ -399,6 +404,7 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
 
     order.orderStatus = "cancelled";
     order.paymentInfo.status = "refunded";
+    order.markModified("paymentInfo");
     await order.save();
 
     res.status(200).json({
