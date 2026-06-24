@@ -99,21 +99,17 @@ router.post("/checkout", verifyToken, isCustomer, async (req, res) => {
     for (const item of items) {
       const product = await Product.findById(item.productId);
       if (!product) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-            message: `Product ${item.productId} not found`,
-          });
+        return res.status(404).json({
+          success: false,
+          message: `Product ${item.productId} not found`,
+        });
       }
 
       if (product.stock < item.quantity) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: `Insufficient stock for ${product.name}`,
-          });
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for ${product.name}`,
+        });
       }
 
       orderItems.push({
@@ -184,15 +180,27 @@ router.post("/razorpay/verify", verifyToken, isCustomer, async (req, res) => {
     const { razorpayOrderId, razorpayPaymentId, razorpaySignature, orderId } =
       req.body;
 
+    // 🔍 DIAGNOSTIC LOG: This prints to your live server log streams
+    console.log("📦 Incoming Verification Payload:", req.body);
+
     if (
       !razorpayOrderId ||
       !razorpayPaymentId ||
       !razorpaySignature ||
       !orderId
     ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing Razorpay payment details" });
+      return res.status(400).json({
+        success: false,
+        message: "Missing Razorpay payment details",
+        // 🛠️ THIS WILL SHOW YOU EXACTLY WHAT THE SERVER SAW IN YOUR CHROME DEVTOOLS
+        debugReport: {
+          hasOrderId: !!orderId,
+          hasRazorpayOrderId: !!razorpayOrderId,
+          hasRazorpayPaymentId: !!razorpayPaymentId,
+          hasRazorpaySignature: !!razorpaySignature,
+          receivedBody: req.body || "BODY_WAS_COMPLETELY_EMPTY",
+        },
+      });
     }
 
     const order = await Order.findById(orderId);
@@ -217,16 +225,13 @@ router.post("/razorpay/verify", verifyToken, isCustomer, async (req, res) => {
         .json({ success: false, message: "Invalid Razorpay signature" });
     }
 
-    // Process fulfillment safely
     const fulfilledOrder = await fulfillOrder(order, razorpayPaymentId);
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: "Payment verified successfully",
-        order: fulfilledOrder,
-      });
+    res.status(200).json({
+      success: true,
+      message: "Payment verified successfully",
+      order: fulfilledOrder,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -244,13 +249,16 @@ router.post("/webhook/razorpay", async (req, res) => {
         .json({ success: false, message: "Missing Razorpay signature" });
     }
 
+    console.log("Received Razorpay webhook:", {
+      event: req.body.event,
+      payload: req.body.payload,
+    });
+
     if (!req.rawBody) {
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Server configuration error: rawBody missing",
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error: rawBody missing",
+      });
     }
 
     const isValid = verifyRazorpaySignature(
@@ -272,25 +280,21 @@ router.post("/webhook/razorpay", async (req, res) => {
     const paymentId = paymentEntity?.id;
 
     if (!razorpayOrderId) {
-      return res
-        .status(200)
-        .json({
-          success: true,
-          message:
-            "Webhook received but not tied to a structured transaction order",
-        });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Webhook received but not tied to a structured transaction order",
+      });
     }
 
     const order = await Order.findOne({
       "paymentInfo.razorpayOrderId": razorpayOrderId,
     });
     if (!order) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Order reference matching Razorpay data not found",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Order reference matching Razorpay data not found",
+      });
     }
 
     if (event.event === "payment.captured") {

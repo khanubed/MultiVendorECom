@@ -81,18 +81,26 @@ const RazorpayCheckout = ({
         // Inside your RazorpayCheckout component options logic block:
         handler: async (response) => {
           try {
-            const verifyResponse = await orderAPI.verifyRazorpayPayment({
+            // 🔍 TRACK FRONTEND OBJECT CONSTRUCTION
+            console.log("🎯 Razorpay UI Callback Received:", response);
+            console.log("🆔 Internal Database Order ID:", data?.order?._id);
+
+            const payload = {
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature,
-              orderId: data.order._id,
-            });
+              orderId: data?.order?._id,
+            };
+
+            console.log("🚀 Shipping Payload to Verification Route:", payload);
+
+            const verifyResponse =
+              await orderAPI.verifyRazorpayPayment(payload);
 
             toast.success("Payment successful! Order placed.");
-
-            // Pass the fully updated order downstream to clear any local application states
             onSuccess(verifyResponse.data.order);
           } catch (err) {
+            console.error("❌ Verification Request Crashed:", err);
             toast.error(
               err.response?.data?.message || "Payment verification failed",
             );
