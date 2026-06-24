@@ -35,9 +35,6 @@ const calculatePayouts = (totalPrice) => {
 };
 
 const verifyRazorpaySignature = (payload, secret, expectedSignature) => {
-
-  
-
   const generatedSignature = crypto
     .createHmac("sha256", secret)
     .update(payload)
@@ -340,6 +337,9 @@ router.post("/webhook/razorpay", async (req, res) => {
 /**
  * POST: Request refund for an order
  */
+/**
+ * POST: Request refund for an order
+ */
 router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
   try {
     const { reason } = req.body;
@@ -355,6 +355,16 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
       return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
+    // Ensure the order has a valid payment ID to refund against
+    const paymentId = order.paymentInfo?.paymentId;
+    if (!paymentId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot refund an order that does not have a confirmed Payment ID.",
+      });
+    }
+
     if (
       order.paymentInfo.status !== "paid" ||
       order.orderStatus === "cancelled"
@@ -364,26 +374,41 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
         .json({ success: false, message: "Refund not allowed for this order" });
     }
 
+    // Calculate amounts (Razorpay needs integers in PAISE, so we multiply by 100)
     const refundAmount = Number((order.totalPrice * 0.95).toFixed(2));
     const retainedCommission = Number((order.totalPrice * 0.05).toFixed(2));
 
+    // 🚀 🟢 CRITICAL ADDITION: Actually trigger the refund via Razorpay API
+    const razorpayRefund = await razorpay.payments.refund(paymentId, {
+      amount: Math.round(refundAmount * 100), // Convert to Paise (e.g., ₹100.00 = 10000)
+      notes: {
+        reason: reason || "Customer requested refund",
+        orderId: order._id.toString(),
+      },
+    });
+
+    // 💾 Update MongoDB only after Razorpay confirms the API call succeeded
     order.refundInfo = {
+      id: razorpayRefund.id, // Save Razorpay's Refund Reference ID
       amount: refundAmount,
       reason: reason || "Customer requested refund",
       retainedCommission,
       refundedAt: new Date(),
       refundStatus: "processed",
     };
+
     order.orderStatus = "cancelled";
     order.paymentInfo.status = "refunded";
     await order.save();
 
     res.status(200).json({
       success: true,
-      message: "Refund processed successfully. 5% admin commission retained.",
+      message:
+        "Refund processed successfully via Razorpay. 5% admin commission retained.",
       refund: order.refundInfo,
     });
   } catch (error) {
+    console.error("❌ Refund Processing Failure:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });
