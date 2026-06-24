@@ -4,7 +4,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
-
+import connectDB from './src/config/db.js';
 // Route Imports
 import authRoutes from './src/routes/auth.routes.js';
 import productRoutes from './src/routes/product.routes.js';
@@ -38,11 +38,7 @@ app.use(express.urlencoded({ extended: true }));
 // ==========================================
 // 2. DATABASE CONNECTION
 // ==========================================
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/nexusmarket';
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('🚀 MongoDB connected successfully.'))
-    .catch((err) => console.error('❌ MongoDB connection error:', err));
-
+await connectDB()
 // ==========================================
 // 3. REAL-TIME COMMUNICATION (SOCKET.IO)
 // ==========================================
