@@ -341,13 +341,12 @@ router.post("/webhook/razorpay", async (req, res) => {
 
 /**
  * POST: Request refund for an order
- */
-/**
- * POST: Request refund for an order
- */
+ **/
 router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
   try {
     const { reason } = req.body;
+    
+    // 1. Fetch order from the database
     const order = await Order.findById(req.params.id).populate("items.product");
 
     if (!order) {
@@ -356,45 +355,68 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
+    // 2. Authorization Check
     if (order.user.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Unauthorized" });
+      return res.status(403).json({ success: false, message: "Unauthorized access to this order." });
     }
 
-    // Ensure the order has a valid payment ID to refund against
-    const paymentId = order.paymentInfo?.razorpayPaymentId;
+    const paymentId = order.paymentInfo?.razorpayPaymentId || order.paymentInfo?.paymentId; 
     if (!paymentId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Cannot refund an order that does not have a confirmed Payment ID.",
+        message: "Cannot refund an order that does not have a confirmed Payment ID.",
       });
     }
 
-    if (
-      order.paymentInfo.status !== "paid" ||
-      order.orderStatus === "cancelled"
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Refund not allowed for this order" });
+    // 3. Status Guardrails
+    if (order.orderStatus === "cancelled" || order.paymentInfo.status === "refunded") {
+      return res.status(400).json({ 
+        success: false, 
+        message: "This order has already been cancelled and refunded." 
+      });
     }
 
-    // Calculate amounts (Razorpay needs integers in PAISE, so we multiply by 100)
+    if (order.paymentInfo.status !== "paid") {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Refund rejected. Current payment status is '${order.paymentInfo.status}', but must be 'paid'.` 
+      });
+    }
+
+    // 4. Financial Calculations (Convert cleanly to float decimal)
     const refundAmount = Number((order.totalPrice * 0.95).toFixed(2));
     const retainedCommission = Number((order.totalPrice * 0.05).toFixed(2));
 
-    // 🚀 🟢 CRITICAL ADDITION: Actually trigger the refund via Razorpay API
-    const razorpayRefund = await razorpay.payments.refund(paymentId, {
-      amount: Math.round(refundAmount * 100), // Convert to Paise (e.g., ₹100.00 = 10000)
-      notes: {
-        reason: reason || "Customer requested refund",
-        orderId: order._id.toString(),
-      },
-    });
+    // Variable to temporarily store the successful gateway payload
+    let razorpayRefund;
 
-    // 💾 Update MongoDB only after Razorpay confirms the API call succeeded
+    // 5. 🔥 RAZORPAY GATEWAY ISOLATION BLOCK
+    // We isolate this network request so a gateway rejection halts code execution instantly.
+    try {
+      razorpayRefund = await razorpay.payments.refund(paymentId, {
+        amount: Math.round(refundAmount * 100), // Strict conversion to integer Paise
+        notes: {
+          reason: reason || "Customer requested refund",
+          orderId: order._id.toString(),
+        },
+      });
+      console.log(`✅ Razorpay refund successful for Order ${order._id}. Refund ID: ${razorpayRefund.id}`);
+    } catch (razorpayError) {
+      // If Razorpay says NO, we log it and exit immediately. DB state remains completely untouched.
+      console.error("❌ Razorpay Gateway API Rejected Refund Request:", razorpayError);
+      
+      return res.status(402).json({
+        success: false,
+        message: "The payment gateway rejected this refund request.",
+        errorReason: razorpayError.description || razorpayError.message || "Unknown gateway error",
+        code: razorpayError.code || "GATEWAY_ERROR"
+      });
+    }
+
+    // 6. 💾 DATABASE MUTATION BLOCK
+    // This section is only reachable if Razorpay successfully processed the block above.
     order.refundInfo = {
-      id: razorpayRefund.id, // Save Razorpay's Refund Reference ID
+      id: razorpayRefund.id, // Stamped official transaction reference ID (rfnd_xxxx)
       amount: refundAmount,
       reason: reason || "Customer requested refund",
       retainedCommission,
@@ -404,18 +426,22 @@ router.post("/:id/refund", verifyToken, isCustomer, async (req, res) => {
 
     order.orderStatus = "cancelled";
     order.paymentInfo.status = "refunded";
-    order.markModified("paymentInfo");
+    
+    // Explicitly flag deep mixed updates inside nested schema objects
+    order.markModified("paymentInfo"); 
     await order.save();
 
-    res.status(200).json({
+    // 7. Success Broadcast Response
+    return res.status(200).json({
       success: true,
-      message:
-        "Refund processed successfully via Razorpay. 5% admin commission retained.",
+      message: "Refund processed successfully via Razorpay. 5% admin commission retained.",
       refund: order.refundInfo,
     });
+
   } catch (error) {
-    console.error("❌ Refund Processing Failure:", error.message);
-    res.status(500).json({ success: false, message: error.message });
+    // Catches absolute system/network crashes or database write dropouts
+    console.error("💥 Critical System Failure in Refund Router:", error.message);
+    return res.status(500).json({ success: false, message: "Internal Server Error during processing." });
   }
 });
 
