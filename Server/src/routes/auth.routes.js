@@ -112,7 +112,7 @@ router.post('/customer/login', async (req, res) => {
 
 // ==========================================
 // VENDOR AUTHENTICATION ROUTES
-// ==========================================
+// ===  =======================================
 
 /**
  * POST: Vendor Registration

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { chatAPI, chatSocketEvents, socket } from '../services/api';
+import { chatAPI, chatSocketEvents, getSocket } from '../services/api';
 import toast from 'react-hot-toast';
 
 export const useChat = (chatRoomId, userId, role) => {
@@ -36,12 +36,9 @@ export const useChat = (chatRoomId, userId, role) => {
     if (!content.trim() || !chatRoomId) return;
 
     try {
-      // Save to database
+      // Save to database (server also emits via socket to the chat room)
       const { data } = await chatAPI.sendMessage(chatRoomId, content);
       setMessages(data.chatRoom?.messages || []);
-
-      // Emit via WebSocket for real-time delivery
-      chatSocketEvents.sendMessage(chatRoomId, userId, role, content);
 
       return { success: true };
     } catch (err) {
@@ -63,11 +60,24 @@ export const useChat = (chatRoomId, userId, role) => {
 
   // Listen to WebSocket events
   useEffect(() => {
+    // Access the current socket instance dynamically via getter
+    const socket = getSocket();
     if (!socket) return;
 
     const handleReceiveMessage = (messageData) => {
       if (messageData.chatRoomId === chatRoomId) {
-        setMessages(prev => [...prev, messageData]);
+        // Server emits { chatRoomId, message: {...} } — extract the message
+        const msg = messageData.message || messageData;
+        setMessages(prev => {
+          // Avoid duplicates — if we already have this message from the REST response, skip
+          const isDuplicate = prev.some(m => 
+            m.content === msg.content && 
+            m.sender === msg.sender && 
+            Math.abs(new Date(m.createdAt) - new Date(msg.createdAt)) < 2000
+          );
+          if (isDuplicate) return prev;
+          return [...prev, msg];
+        });
       }
     };
 
@@ -94,7 +104,7 @@ export const useChat = (chatRoomId, userId, role) => {
       socket.off('user_typing', handleUserTyping);
       socket.off('user_stopped_typing', handleUserStoppedTyping);
     };
-  }, [chatRoomId, userId, socket]);
+  }, [chatRoomId, userId]);
 
   // Leave chat room on unmount
   useEffect(() => {

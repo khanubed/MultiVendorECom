@@ -14,36 +14,8 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-
-// Mock Database Repository for local structural demonstration
-const MOCK_DATABASE = [
-  {
-    id: "p1",
-    name: "Premium Artisan Stoneware Plate",
-    price: 34.99,
-    description:
-      "Hand-thrown ceramic plate finished in a durable matte charcoal glaze. Safe for microwave and dishwasher operations.",
-    imageUrl:
-      "https://images.unsplash.com/photo-1610701596007-11502861ecfa?q=80&w=600",
-    badge: "Premium",
-    isFeatured: true,
-    category: "Home & Living",
-    stock: 142,
-  },
-  {
-    id: "p2",
-    name: "Ergonomic Mechanical Keyboard",
-    price: 189.99,
-    description:
-      "Hot-swappable linear switch setup equipped with gasket-mounted aluminum frame housing.",
-    imageUrl:
-      "https://images.unsplash.com/photo-1618384887929-16ec33fab9ef?q=80&w=600",
-    badge: "New Arrival",
-    isFeatured: false,
-    category: "Electronics",
-    stock: 28,
-  },
-];
+import { productAPI } from "../../services/api";
+import toast from "react-hot-toast";
 
 const EditProductPage = () => {
   const { id } = useParams(); // Extract structural entry node ID from route string parameters
@@ -70,12 +42,9 @@ const EditProductPage = () => {
     const fetchProductRecord = async () => {
       setInitialLoading(true);
       try {
-        // In production architecture, swap this mock execution block with your remote API layer:
-        // const response = await fetch(`/api/products/${id}`);
-        // const data = await response.json();
+        const data = await productAPI.getProduct(id);
 
-        await new Promise((resolve) => setTimeout(resolve, 800)); // Network latency simulation
-        const dynamicRecord = MOCK_DATABASE.find((item) => item.id === id);
+        const dynamicRecord = data.data.product;
 
         if (!dynamicRecord) {
           setError(
@@ -117,63 +86,65 @@ const EditProductPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess(false);
-
-    // Front-end schema assurance checkpoints
-    if (formData.name.length > 100) {
-      setError("Product name cannot exceed 100 characters.");
-      return;
-    }
-    if (parseFloat(formData.price) < 0) {
-      setError("Price validation failure: Negative balances are restricted.");
-      return;
-    }
-    if (parseInt(formData.stock) < 0) {
-      setError("Stock allocation baseline metrics cannot be less than 0.");
-      return;
-    }
-
-    setSaveLoading(true);
-
     try {
-      // Cast local form parameters to target schema database primitive types
-      const cleanPayload = {
-        ...formData,
-        price: parseFloat(formData.price),
-        stock: parseInt(formData.stock),
-        badge: formData.badge.trim() === "" ? null : formData.badge.trim(),
-      };
+      toast.loading("Updating product...", { id: "productAction" });
 
-      console.log(
-        `Transmitting Mutated Schema Updates for Document Node [${id}]:`,
-        cleanPayload,
+      // Call your API service mapping to your backend PUT route
+      const response = await productAPI.updateProduct(
+        id,
+        formData,
       );
 
-      // Simulated network update transmission cycle
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (response.data.success) {
+        toast.success(
+          response.data.message || "Product updated successfully!",
+          { id: "productAction" },
+        );
 
-      setSuccess(true);
-      setTimeout(() => navigate("/vendor/products"), 1400);
-    } catch (err) {
-      setError(
-        "Database persistence pipeline rejected the tracking modification update bundle.",
-      );
-    } finally {
-      setSaveLoading(false);
+        // Optional: Route them back to their dashboard panel
+        navigate("/vendor/products   ");
+      }
+    } catch (error) {
+      console.error("❌ Product Update Error:", error);
+      const errorMsg =
+        error.response?.data?.message || "Failed to update product.";
+      toast.error(errorMsg, { id: "productAction" });
     }
   };
 
-  const handleDeleteAsset = () => {
-    if (
-      window.confirm(
-        "CRITICAL WARNING: Are you certain you want to purge this database document listing permanently?",
-      )
-    ) {
-      console.log(
-        `Executing absolute document purge command on reference node ID: ${id}`,
-      );
-      navigate("/vendor/products");
+  // 2. Handle Product Delete Action
+  const handleDeleteAsset = async () => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to permanently delete this product?",
+    );
+    if (!confirmDelete) return;
+
+    try {
+      toast.loading("Deleting product...", { id: "productAction" });
+
+      // Call your API service mapping to your backend DELETE route
+      const response = await productAPI.deleteProduct(id);
+
+      if (response.data.success) {
+        toast.success(response.data.message || "Product removed safely.", {
+          id: "productAction",
+        });
+
+        // State update: If managing an array list on the parent UI layer, filter out the dead id
+        if (setProductsList) {
+          setProductsList((prevProducts) =>
+            prevProducts.filter((p) => p._id !== productId),
+          );
+        }
+
+        // Send them away from the edit page of a non-existent item
+        navigate("/vendor/my-products");
+      }
+    } catch (error) {
+      console.error("❌ Product Deletion Error:", error);
+      const errorMsg =
+        error.response?.data?.message || "Failed to delete product.";
+      toast.error(errorMsg, { id: "productAction" });
     }
   };
 

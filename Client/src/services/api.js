@@ -24,12 +24,18 @@ apiClient.interceptors.request.use((config) => {
 // Socket.io instance for real-time chat
 export let socket = null;
 
+// Getter to always access the current socket instance
+export const getSocket = () => socket;
+
 export const initializeSocket = (token) => {
   if (socket?.connected) return socket;
   
   socket = io(WS_URL, {
     auth: {
       token
+    } ,
+    query : {
+      role : JSON.parse(localStorage.getItem('user')).role
     }
   });
 
@@ -108,7 +114,10 @@ export const productAPI = {
   deleteProduct: (id) => apiClient.delete(`/products/${id}`),
 
   // Get vendor's products
-  getVendorProducts: () => apiClient.get('/products/vendor/my-products')
+  getVendorProducts: () => apiClient.get('/products/vendor/my-products'),
+
+  //Get featured products 
+  getFeaturedProducts: () => apiClient.get('/products/featured')
 };
 
 // ==========================================
@@ -128,7 +137,10 @@ export const vendorAPI = {
   getAllVendors: () => apiClient.get('/vendors'),
 
   // Get single vendor
-  getVendor: (id) => apiClient.get(`/vendors/${id}`)
+  getVendor: (id) => apiClient.get(`/vendors/${id}`),
+
+  //Get analytics
+  getAnalytics: () => apiClient.get('/vendors/analytics')
 };
 
 // ==========================================
@@ -210,7 +222,24 @@ export const chatAPI = {
   getUnreadCount: () => apiClient.get('/chat/unread/count')
 };
 
-// ==========================================
+//=========================================
+// Admin Apis 
+//====================================
+
+export const adminApi = {
+  //Get Dashboard 
+  getDashboardStats: () => apiClient.get('/admin/dashboard'),
+  // Get all products 
+  getAllProducts: () => apiClient.get('/admin/products'),
+
+  // Update product status
+  updateProductStatus: (id, approvalStatus  ) => apiClient.patch(`/admin/products/${id}/approval`, { approvalStatus }),
+
+  // Update product featured
+  updateProductFeatured: (id, featured) => apiClient.patch(`/admin/products/${id}/featured`, { featured }),
+} 
+
+// ============ ==============================
 // Socket.io Chat Events (emit to server)
 // ==========================================
 export const chatSocketEvents = {

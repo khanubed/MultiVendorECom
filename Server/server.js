@@ -12,6 +12,7 @@ import vendorRoutes from './src/routes/vendor.routes.js';
 import cartRoutes from './src/routes/cart.routes.js';
 import orderRoutes from './src/routes/order.routes.js';
 import chatRoutes from './src/routes/chat.routes.js';
+import adminRoutes from './src/routes/admin.routes.js';
 
 dotenv.config();
 
@@ -194,6 +195,7 @@ app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/chat', chatRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // 404 Handler
 app.use((req, res) => {

@@ -44,7 +44,7 @@ const OrderTrackingPage = () => {
   const handleStartChat = async () => {
     if (!order) return;
     try {
-      const { data } = await chatAPI.createOrGetChatRoom(order.id);
+      const { data } = await chatAPI.createOrGetChatRoom(order._id || order.id);
       const roomId = data.chatRoom?._id || data.chatRoom?.id;
       if (roomId) {
         navigate(`/vendor-chat/${roomId}`);

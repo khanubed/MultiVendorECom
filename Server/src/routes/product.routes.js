@@ -55,6 +55,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get("/featured", async (req, res) => {
+  try {
+    const featuredProducts = await Product.find({
+      isFeatured: true,
+      approvalStatus: "approved",
+      stock: { $gt: 0 } 
+    })
+      .sort({ createdAt: -1 }) // Get newest first
+      .limit(3); // We limit to 3 because your Bento grid handles exactly 3 items perfectly
+
+    res.status(200).json({ success: true, products: featuredProducts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 /**
  * GET: Fetch single product by ID
  */

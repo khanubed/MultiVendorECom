@@ -555,8 +555,9 @@ router.get("/vendor/orders", verifyToken, isVendor, async (req, res) => {
     const productIds = vendorProducts.map((p) => p._id);
 
     const orders = await Order.find({ "items.product": { $in: productIds } })
-      .populate("user")
-      .populate("items.product")
+      .populate("user", "name email phone") 
+      // 🌟 If you need MORE product info (like category or badge), add it to this string
+      .populate("items.product", "name price imageUrl category badge") 
       .sort({ createdAt: -1 });
 
     res.status(200).json({ success: true, orders });
@@ -599,5 +600,7 @@ router.put("/:id/status", verifyToken, isVendor, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+
 
 export default router;

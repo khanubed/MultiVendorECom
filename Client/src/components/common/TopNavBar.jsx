@@ -36,9 +36,9 @@ const TopNavBar = () => {
           <NavLink to="/shop" className={getNavStyle}>
             Marketplace
           </NavLink>
-          <NavLink to="/categories" className={getNavStyle}>
+          {/* <NavLink to="/categories" className={getNavStyle}>
             Categories
-          </NavLink>
+          </NavLink> */}
           
           {/* CONDITIONALLY RENDER TRACKING LINK */}
           {isAuthenticated && (

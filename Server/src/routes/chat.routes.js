@@ -76,30 +76,8 @@ router.post('/create-or-get', verifyToken, async (req, res) => {
 });
 
 /**
- * GET: Fetch chat room details
- */
-router.get('/:chatRoomId', verifyToken, async (req, res) => {
-  try {
-    const chatRoom = await ChatRoom.findById(req.params.chatRoomId)
-      .populate('customer', 'name email phone')
-      .populate('vendor', 'name email phone')
-      .populate('order');
-
-    if (!chatRoom) {
-      return res.status(404).json({ success: false, message: 'Chat room not found' });
-    }
-
-    res.status(200).json({ 
-      success: true, 
-      chatRoom 
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-/**
  * GET: Fetch all chat rooms for customer
+ * IMPORTANT: Static routes must be registered BEFORE parameterized /:chatRoomId
  */
 router.get('/customer/all', verifyToken, isCustomer, async (req, res) => {
   try {
@@ -137,6 +115,63 @@ router.get('/vendor/all', verifyToken, isVendor, async (req, res) => {
 });
 
 /**
+ * GET: Count unread messages for user
+ */
+router.get('/unread/count', verifyToken, async (req, res) => {
+  try {
+    let query = {};
+    
+    if (req.user.role === 'customer') {
+      query = { customer: req.user.id };
+    } else if (req.user.role === 'vendor') {
+      query = { vendor: req.user.id };
+    }
+
+    const chatRooms = await ChatRoom.find(query);
+    let unreadCount = 0;
+
+    chatRooms.forEach(room => {
+      room.messages.forEach(msg => {
+        if (!msg.readAt && msg.sender.toString() !== req.user.id) {
+          unreadCount++;
+        }
+      });
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      unreadCount 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET: Fetch chat room details
+ * NOTE: This parameterized route MUST come after all static /chat/* routes
+ */
+router.get('/:chatRoomId', verifyToken, async (req, res) => {
+  try {
+    const chatRoom = await ChatRoom.findById(req.params.chatRoomId)
+      .populate('customer', 'name email phone')
+      .populate('vendor', 'name email phone')
+      .populate('order');
+
+    if (!chatRoom) {
+      return res.status(404).json({ success: false, message: 'Chat room not found' });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      chatRoom 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST: Send message to chat room
  * Socket.io will handle real-time delivery
  */
@@ -166,8 +201,22 @@ router.post('/:chatRoomId/message', verifyToken, async (req, res) => {
     chatRoom.lastMessageTime = new Date();
     await chatRoom.save();
 
+    // Emit real-time message via Socket.io to the chat room
+    if (req.io) {
+      req.io.to(req.params.chatRoomId).emit('receive_message', {
+        chatRoomId: req.params.chatRoomId,
+        message: {
+          sender: req.user.id,
+          senderType,
+          content: content.trim(),
+          createdAt: new Date()
+        }
+      });
+    }
+
     const populatedChatRoom = await ChatRoom.findById(req.params.chatRoomId)
-      .populate('messages.sender');
+      .populate('customer', 'name email phone')
+      .populate('vendor', 'name email phone');
 
     res.status(201).json({ 
       success: true, 
@@ -201,39 +250,6 @@ router.put('/:chatRoomId/mark-read', verifyToken, async (req, res) => {
     res.status(200).json({ 
       success: true, 
       message: 'Messages marked as read' 
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-/**
- * GET: Count unread messages for user
- */
-router.get('/unread/count', verifyToken, async (req, res) => {
-  try {
-    let query = {};
-    
-    if (req.user.role === 'customer') {
-      query = { customer: req.user.id };
-    } else if (req.user.role === 'vendor') {
-      query = { vendor: req.user.id };
-    }
-
-    const chatRooms = await ChatRoom.find(query);
-    let unreadCount = 0;
-
-    chatRooms.forEach(room => {
-      room.messages.forEach(msg => {
-        if (!msg.readAt && msg.sender.toString() !== req.user.id) {
-          unreadCount++;
-        }
-      });
-    });
-
-    res.status(200).json({ 
-      success: true, 
-      unreadCount 
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
